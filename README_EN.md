@@ -27,6 +27,10 @@ App Store Scraper is a modern Go library designed specifically for scraping appl
 
 The library was created to address the lack of reliable App Store data scraping tools in the Go ecosystem. By wrapping Apple's official iTunes Search API and RSS Feed API, we can retrieve comprehensive data including app details, user reviews, rating statistics, ranking information, developer app lists, and more.
 
+### Learn from and refer to
++ JavaScript: [facundoolano/app-store-scraper](https://github.com/facundoolano/app-store-scraper)
++ TypeScript: [plahteenlahti/app-store-scraper](https://github.com/plahteenlahti/app-store-scraper)
+
 ## Features
 
 ### Complete Type Safety

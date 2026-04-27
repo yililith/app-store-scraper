@@ -27,6 +27,10 @@ App Store Scraper 是一个用 Go 语言编写的现代化库，专门用于从 
 
 本项目设计初衷是为了解决在 Go 语言生态中缺乏可靠的 App Store 数据抓取工具的问题。通过封装 Apple 官方的 iTunes Search API 和 RSS Feed API，我们能够获取应用的详细信息、用户评论、评分数据、排行榜信息、开发者应用列表等丰富的数据。
 
+### 借鉴并参考
++ JavaScript: [facundoolano/app-store-scraper](https://github.com/facundoolano/app-store-scraper)
++ TypeScript: [plahteenlahti/app-store-scraper](https://github.com/plahteenlahti/app-store-scraper)
+
 ## 功能特点
 
 ### 完整类型安全
