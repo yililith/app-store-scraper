@@ -19,7 +19,6 @@
 - [Error Handling](#error-handling)
 - [Performance Optimization](#performance-optimization)
 - [FAQ](#faq)
-- [Contributing](#contributing)
 - [License](#license)
 
 ## Introduction
@@ -63,19 +62,19 @@ In addition to average ratings, complete rating distribution data can be retriev
 > 📝 **Note**: Installation instructions will be added after the package is officially released to Go's module registry.
 
 ```bash
-# Not yet released, please wait for future updates
+go get github.com/yililith/app-store-scraper
 ```
 
 ### Prerequisites
 
-- Go 1.18 or higher
+- Go 1.25.6 or higher
 
 ### Module Import
 
 After installation, import in your Go project:
 
 ```go
-import appstore "app-store-scraper"
+import appstore "github.com/yililith/app-store-scraper"
 ```
 
 ## Quick Start
@@ -602,7 +601,7 @@ package main
 
 import (
     "fmt"
-    appstore "app-store-scraper"
+    appstore "github.com/yililith/app-store-scraper"
 )
 
 func main() {
@@ -767,19 +766,9 @@ client := &appstore.Client{
 scraper := appstore.NewScraperWithClient(client)
 ```
 
-## Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork this repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Create a Pull Request
-
 ### Development Environment
 
-- Go 1.18 or higher
+- Go 1.25.6 or higher
 - Code formatting tool: gofmt
 - Recommended IDEs: VS Code or GoLand
 

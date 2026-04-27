@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	appstore "app-store-scraper"
+	appstore "github.com/yililith/app-store-scraper"
 )
 
 func main() {
