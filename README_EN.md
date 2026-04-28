@@ -62,9 +62,6 @@ When retrieving multiple app details, the library internally uses goroutines for
 In addition to average ratings, complete rating distribution data can be retrieved, including the number of reviews from 1-star to 5-star ratings, helping you get a more comprehensive understanding of the app's user feedback.
 
 ## Installation
-
-> 📝 **Note**: Installation instructions will be added after the package is officially released to Go's module registry.
-
 ```bash
 go get github.com/yililith/app-store-scraper
 ```

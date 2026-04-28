@@ -139,9 +139,7 @@ func testList() {
 		name    string
 		options appstore.ListOptions
 	}{
-		{"菲律宾免费财务榜单 (基本模式)", appstore.ListOptions{Collection: appstore.TopFreeIOS, Category: appstore.Finance, Country: appstore.CountryPH, Num: 10, FullDetail: false}},
-		{"菲律宾免费财务榜单 (完整详情)", appstore.ListOptions{Collection: appstore.TopFreeIOS, Category: appstore.Finance, Country: appstore.CountryPH, Num: 5, FullDetail: true}},
-		{"台湾免费游戏榜单", appstore.ListOptions{Collection: appstore.TopFreeIOS, Category: appstore.Games, Country: appstore.CountryTW, Num: 5, FullDetail: false}},
+		{"菲律宾免费财务榜单 (完整详情)", appstore.ListOptions{Collection: appstore.TopFreeIOS, Category: appstore.Finance, Country: appstore.CountryPH, Num: 100, FullDetail: true}},
 	}
 
 	for i, tc := range testCases {
@@ -153,9 +151,7 @@ func testList() {
 		}
 		fmt.Printf("   ✅ 获取到 %d 个应用\n", len(apps))
 		for j, app := range apps {
-			if j < 3 {
-				fmt.Printf("   %d. %s - 评分: %.1f\n", j+1, app.Title, app.Score)
-			}
+			fmt.Printf("%d: %v\n", j+1, app.Title)
 		}
 	}
 }
