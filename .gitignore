@@ -28,3 +28,5 @@ vendor/
 # Logs
 *.log
 logs/
+docs/
+
