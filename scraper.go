@@ -34,29 +34,25 @@ func NewScraperWithClient(client *Client) *Scraper {
 // opts: 获取选项，包含ID或AppID
 // 返回应用信息结构体和错误信息
 func (s *Scraper) App(opts AppOptions) (*AppInfo, error) {
-	// 验证参数：ID和AppID至少需要提供一个
 	if opts.ID == 0 && opts.AppID == "" {
 		return nil, ErrInvalidParameter
 	}
 
-	// 设置默认值
 	if opts.Country == "" {
 		opts.Country = CountryUS
 	}
 
-	// 确定查询字段
 	var path string
-	var idValue interface{}
+	var idValue string
 	if opts.ID != 0 {
 		path = "/lookup"
-		idValue = opts.ID
+		idValue = strconv.FormatInt(opts.ID, 10)
 	} else {
 		path = "/lookup"
 		idValue = opts.AppID
 	}
 
-	// 构建查询参数
-	params := map[string]interface{}{
+	params := map[string]string{
 		"id":      idValue,
 		"country": string(opts.Country),
 		"entity":  "software",
@@ -65,33 +61,22 @@ func (s *Scraper) App(opts AppOptions) (*AppInfo, error) {
 		params["lang"] = opts.Lang
 	}
 
-	// 发送API请求
-	result, err := s.client.Get(path, params)
+	result, err := s.client.GetLookup(path, params)
 	if err != nil {
 		return nil, err
 	}
 
-	// 检查API返回结果
-	results, ok := result["results"].([]interface{})
-	if !ok || len(results) == 0 {
+	if len(result.Results) == 0 {
 		return nil, ErrNotFound
 	}
 
-	// 解析第一个结果
-	resultMap, ok := results[0].(map[string]interface{})
-	if !ok {
-		return nil, ErrInvalidResponse
-	}
-
-	// 过滤软件类型
-	if kind := parseInterfaceString(resultMap["kind"]); kind != "software" && parseInterfaceString(resultMap["wrapperType"]) != "software" {
+	appResult := result.Results[0]
+	if appResult.Kind != "software" && appResult.WrapperType != "software" {
 		return nil, ErrNotFound
 	}
 
-	// 转换为AppInfo结构体
-	app := s.parseAppInfo(resultMap)
+	app := s.parseAppResult(appResult)
 
-	// 如果API没有返回截图，尝试从App Store页面爬取
 	hasScreenshots := len(app.ScreenshotURLs) > 0 || len(app.IpadScreenshots) > 0 || len(app.AppletvScreenshots) > 0
 	if !hasScreenshots {
 		screenshots := s.scrapeScreenshots(app.ID, string(opts.Country), opts.RequestOptions)
@@ -100,7 +85,6 @@ func (s *Scraper) App(opts AppOptions) (*AppInfo, error) {
 		app.AppletvScreenshots = screenshots.AppletvScreenshots
 	}
 
-	// 如果需要包含评分直方图
 	if opts.Ratings {
 		ratingsData, err := s.Ratings(RatingsOptions{
 			ID:             app.ID,
@@ -119,12 +103,10 @@ func (s *Scraper) App(opts AppOptions) (*AppInfo, error) {
 // opts: 搜索选项，包含关键词、分页等参数
 // 返回应用列表或ID列表和错误信息
 func (s *Scraper) Search(opts SearchOptions) ([]AppInfo, error) {
-	// 验证必填参数
 	if opts.Term == "" {
 		return nil, ErrInvalidParameter
 	}
 
-	// 设置默认值
 	if opts.Num == 0 {
 		opts.Num = 50
 	}
@@ -135,57 +117,40 @@ func (s *Scraper) Search(opts SearchOptions) ([]AppInfo, error) {
 		opts.Country = CountryUS
 	}
 
-	// 构建查询参数
 	params := BuildParams(opts)
 	params["term"] = opts.Term
 	params["media"] = "software"
 	params["entity"] = "software"
 
-	// 发送API请求
-	result, err := s.client.Get("/search", params)
+	result, err := s.client.GetLookup("/search", params)
 	if err != nil {
 		return nil, err
 	}
 
-	// 解析响应结果
-	searchResult := &SearchResult{
-		ResultCount: parseInterfaceInt(result["resultCount"]),
-		Results:     []AppInfo{},
-	}
-
-	results, ok := result["results"].([]interface{})
-	if !ok {
-		return searchResult.Results, nil
-	}
-
-	// 过滤软件类型并转换每个结果
-	for _, item := range results {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			if kind := parseInterfaceString(itemMap["kind"]); kind == "software" {
-				app := s.parseAppInfo(itemMap)
-				searchResult.Results = append(searchResult.Results, app)
-			}
+	var apps []AppInfo
+	for _, item := range result.Results {
+		if item.Kind == "software" {
+			app := s.parseAppResult(item)
+			apps = append(apps, app)
 		}
 	}
 
-	// 应用客户端分页
 	start := (opts.Page - 1) * opts.Num
 	end := start + opts.Num
-	if start > len(searchResult.Results) {
+	if start > len(apps) {
 		return []AppInfo{}, nil
 	}
-	if end > len(searchResult.Results) {
-		end = len(searchResult.Results)
+	if end > len(apps) {
+		end = len(apps)
 	}
 
-	return searchResult.Results[start:end], nil
+	return apps[start:end], nil
 }
 
 // List 获取应用列表（排行、新品等）
 // opts: 列表选项，包含集合类型、分类等参数
 // 返回应用列表和错误信息
 func (s *Scraper) List(opts ListOptions) ([]AppInfo, error) {
-	// 设置默认值
 	if opts.Num == 0 {
 		opts.Num = 50
 	}
@@ -196,55 +161,24 @@ func (s *Scraper) List(opts ListOptions) ([]AppInfo, error) {
 		opts.Collection = TopFreeIOS
 	}
 
-	// 限制最大返回数量
 	limit := opts.Num
 	if limit > 200 {
 		limit = 200
 	}
 
-	// 构建URL
-	url := fmt.Sprintf("https://itunes.apple.com/%s/rss/%s", opts.Country, opts.Collection)
-	if opts.Category != 0 {
-		url += fmt.Sprintf("/genre=%d", opts.Category)
-	}
-	url += fmt.Sprintf("/limit=%d/json", limit)
-
-	// 发送请求
-	result, err := s.client.GetRaw(url)
+	feed, err := s.client.GetRSSFeedTyped(string(opts.Country), opts.Collection, opts.Category, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	// 解析响应
-	var feedData map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &feedData); err != nil {
-		return nil, err
-	}
-
-	// 从feed中提取数据
-	feed, ok := feedData["feed"].(map[string]interface{})
-	if !ok {
+	if len(feed.Feed.Entry) == 0 {
 		return []AppInfo{}, nil
 	}
 
-	entries, ok := feed["entry"].([]interface{})
-	if !ok || len(entries) == 0 {
-		return []AppInfo{}, nil
-	}
-
-	// 提取 app IDs
-	appIDs := []int64{}
-	for _, entry := range entries {
-		if entryMap, ok := entry.(map[string]interface{}); ok {
-			if idData, ok := entryMap["id"].(map[string]interface{}); ok {
-				if attributes, ok := idData["attributes"].(map[string]interface{}); ok {
-					if imID, ok := attributes["im:id"].(string); ok {
-						if id, err := strconv.ParseInt(imID, 10, 64); err == nil {
-							appIDs = append(appIDs, id)
-						}
-					}
-				}
-			}
+	appIDs := make([]int64, 0, len(feed.Feed.Entry))
+	for _, entry := range feed.Feed.Entry {
+		if id, err := strconv.ParseInt(entry.ID.Attributes.ImID, 10, 64); err == nil {
+			appIDs = append(appIDs, id)
 		}
 	}
 
@@ -252,38 +186,33 @@ func (s *Scraper) List(opts ListOptions) ([]AppInfo, error) {
 		return []AppInfo{}, nil
 	}
 
-	// 通过lookup获取详细信息
-	return s.lookup(appIDs, "id", string(opts.Country), opts.Lang, opts.RequestOptions)
+	return s.lookup(appIDs, string(opts.Country), opts.Lang, opts.RequestOptions)
 }
 
 // Developer 获取指定开发者的所有应用
 // opts: 开发者选项，包含开发者ID
 // 返回应用列表和错误信息
 func (s *Scraper) Developer(opts DeveloperOptions) ([]AppInfo, error) {
-	// 验证参数：DevID必须提供
 	if opts.DevID == 0 {
 		return nil, ErrInvalidParameter
 	}
 
-	// 设置默认值
 	if opts.Country == "" {
 		opts.Country = CountryUS
 	}
 
-	// 使用lookup获取开发者的应用
-	return s.lookup(opts.DevID, "artistId", string(opts.Country), opts.Lang, opts.RequestOptions)
+	ids := []int64{opts.DevID}
+	return s.lookup(ids, string(opts.Country), opts.Lang, opts.RequestOptions)
 }
 
 // Reviews 获取应用的评论列表
 // opts: 评论选项，包含应用ID、分页、排序等参数
 // 返回评论列表和错误信息
 func (s *Scraper) Reviews(opts ReviewsOptions) ([]Review, error) {
-	// 验证参数
 	if opts.ID == 0 && opts.AppID == "" {
 		return nil, ErrInvalidParameter
 	}
 
-	// 设置默认值
 	if opts.Page == 0 {
 		opts.Page = 1
 	}
@@ -297,7 +226,6 @@ func (s *Scraper) Reviews(opts ReviewsOptions) ([]Review, error) {
 		opts.Sort = Recent
 	}
 
-	// 如果提供了AppID，先获取ID
 	id := opts.ID
 	if opts.AppID != "" && opts.ID == 0 {
 		app, err := s.App(AppOptions{
@@ -310,34 +238,15 @@ func (s *Scraper) Reviews(opts ReviewsOptions) ([]Review, error) {
 		id = app.ID
 	}
 
-	// 构建URL
-	url := fmt.Sprintf("https://itunes.apple.com/%s/rss/customerreviews/page=%d/id=%d/sortby=%s/json",
-		opts.Country, opts.Page, id, opts.Sort)
-
-	// 发送请求
-	result, err := s.client.GetRaw(url)
+	feed, err := s.client.GetReviewFeed(string(opts.Country), opts.Page, int(id), string(opts.Sort))
 	if err != nil {
 		return nil, err
 	}
 
-	// 解析响应
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &data); err != nil {
-		return nil, err
-	}
-
-	// 提取评论
-	reviews := []Review{}
-	if feed, ok := data["feed"].(map[string]interface{}); ok {
-		if entries, ok := feed["entry"].([]interface{}); ok {
-			// 跳过第一个条目（通常是应用元数据）
-			for i := 1; i < len(entries); i++ {
-				if entryMap, ok := entries[i].(map[string]interface{}); ok {
-					review := s.parseReview(entryMap)
-					reviews = append(reviews, review)
-				}
-			}
-		}
+	var reviews []Review
+	for i := 1; i < len(feed.Feed.Entry); i++ {
+		review := s.parseReviewEntry(feed.Feed.Entry[i])
+		reviews = append(reviews, review)
 	}
 
 	return reviews, nil
@@ -389,17 +298,14 @@ func (s *Scraper) Ratings(opts RatingsOptions) (*Ratings, error) {
 // opts: 相似应用选项，包含应用ID等参数
 // 返回相似应用列表和错误信息
 func (s *Scraper) Similar(opts SimilarOptions) ([]AppInfo, error) {
-	// 验证参数
 	if opts.ID == 0 && opts.AppID == "" {
 		return nil, ErrInvalidParameter
 	}
 
-	// 设置默认值
 	if opts.Country == "" {
 		opts.Country = CountryUS
 	}
 
-	// 如果提供了AppID，先获取ID
 	id := opts.ID
 	if opts.AppID != "" && opts.ID == 0 {
 		app, err := s.App(AppOptions{
@@ -412,24 +318,20 @@ func (s *Scraper) Similar(opts SimilarOptions) ([]AppInfo, error) {
 		id = app.ID
 	}
 
-	// 构建URL
 	url := fmt.Sprintf("https://apps.apple.com/%s/app/id%d", opts.Country, id)
 
-	// 发送请求
 	html, err := s.client.GetHTML(url)
 	if err != nil {
 		return []AppInfo{}, nil
 	}
 
-	// 从HTML中提取相似应用的ID
 	similarIds := s.extractSimilarAppIds(html, id)
 
 	if len(similarIds) == 0 {
 		return []AppInfo{}, nil
 	}
 
-	// 使用lookup获取详细信息
-	return s.lookup(similarIds, "id", string(opts.Country), opts.Lang, opts.RequestOptions)
+	return s.lookup(similarIds, string(opts.Country), opts.Lang, opts.RequestOptions)
 }
 
 // Suggest 获取搜索建议
@@ -481,137 +383,79 @@ func (s *Scraper) VersionHistory(opts VersionHistoryOptions) ([]VersionHistory, 
 	return s.parseVersionHistory(html)
 }
 
-// parseAppInfo 解析应用信息
-// data: 原始API响应数据
+// parseAppResult 解析应用信息
+// result: API响应的AppResult结构
 // 返回解析后的AppInfo结构体
-func (s *Scraper) parseAppInfo(data map[string]interface{}) AppInfo {
-	// 获取图标URL
-	icon := parseInterfaceString(data["artworkUrl512"])
+func (s *Scraper) parseAppResult(result AppResult) AppInfo {
+	icon := result.ArtworkURL512
 	if icon == "" {
-		icon = parseInterfaceString(data["artworkUrl100"])
-	}
-
-	// 获取语言代码
-	languages := []string{}
-	if langData, ok := data["languageCodesISO2A"].([]interface{}); ok {
-		for _, lang := range langData {
-			if langStr, ok := lang.(string); ok {
-				languages = append(languages, langStr)
-			}
-		}
-	}
-
-	// 获取genreIds
-	genreIds := []string{}
-	if genreData, ok := data["genreIds"].([]interface{}); ok {
-		for _, g := range genreData {
-			genreIds = append(genreIds, parseInterfaceString(g))
-		}
+		icon = result.ArtworkURL100
 	}
 
 	app := AppInfo{
-		ID:                    parseInterfaceInt64(data["trackId"]),
-		AppID:                 parseInterfaceString(data["bundleId"]),
-		Title:                 parseInterfaceString(data["trackName"]),
-		URL:                   parseInterfaceString(data["trackViewUrl"]),
-		Description:           parseInterfaceString(data["description"]),
+		ID:                    result.TrackID,
+		AppID:                 result.BundleID,
+		Title:                 result.TrackName,
+		URL:                   result.TrackViewURL,
+		Description:           result.Description,
 		Icon:                  icon,
-		Genres:                parseInterfaceArray(data["genres"]),
-		GenreIDs:              genreIds,
-		PrimaryGenre:          parseInterfaceString(data["primaryGenreName"]),
-		PrimaryGenreID:        parseInterfaceString(data["primaryGenreId"]),
-		ContentRating:         parseInterfaceString(data["contentAdvisoryRating"]),
-		Languages:             languages,
-		Size:                  parseInterfaceString(data["fileSizeBytes"]),
-		RequiredOsVersion:     parseInterfaceString(data["minimumOsVersion"]),
-		Released:              parseInterfaceString(data["releaseDate"]),
-		Updated:               parseInterfaceString(data["currentVersionReleaseDate"]),
-		ReleaseNotes:          parseInterfaceString(data["releaseNotes"]),
-		Version:               parseInterfaceString(data["version"]),
-		Price:                 parseInterfaceFloat64(data["price"]),
-		Currency:              parseInterfaceString(data["currency"]),
-		Free:                  parseInterfaceFloat64(data["price"]) == 0,
-		DeveloperID:           parseInterfaceInt64(data["artistId"]),
-		Developer:             parseInterfaceString(data["artistName"]),
-		DeveloperURL:          parseInterfaceString(data["artistViewUrl"]),
-		DeveloperWebsite:      parseInterfaceString(data["sellerUrl"]),
-		Score:                 parseInterfaceFloat64(data["averageUserRating"]),
-		Reviews:               parseInterfaceInt(data["userRatingCount"]),
-		CurrentVersionScore:   parseInterfaceFloat64(data["averageUserRatingForCurrentVersion"]),
-		CurrentVersionReviews: parseInterfaceInt(data["userRatingCountForCurrentVersion"]),
-		ScreenshotURLs:        parseInterfaceArray(data["screenshotUrls"]),
-		IpadScreenshots:       parseInterfaceArray(data["ipadScreenshotUrls"]),
-		AppletvScreenshots:    parseInterfaceArray(data["appletvScreenshotUrls"]),
-		SupportedDevices:      parseInterfaceArray(data["supportedDevices"]),
+		Genres:                result.Genres,
+		GenreIDs:              result.GenreIDs,
+		PrimaryGenre:          result.PrimaryGenreName,
+		PrimaryGenreID:        result.PrimaryGenreID,
+		ContentRating:         result.ContentAdvisoryRating,
+		Languages:             result.LanguageCodesISO2A,
+		Size:                  result.FileSizeBytes,
+		RequiredOsVersion:     result.MinimumOsVersion,
+		Released:              result.ReleaseDate,
+		Updated:               result.CurrentVersionReleaseDate,
+		ReleaseNotes:          result.ReleaseNotes,
+		Version:               result.Version,
+		Price:                 result.Price,
+		Currency:              result.Currency,
+		Free:                  result.Price == 0,
+		DeveloperID:           result.ArtistID,
+		Developer:             result.ArtistName,
+		DeveloperURL:          result.ArtistViewURL,
+		DeveloperWebsite:      result.SellerURL,
+		Score:                 result.AverageUserRating,
+		Reviews:               result.UserRatingCount,
+		CurrentVersionScore:   result.AverageUserRatingForCurrentVersion,
+		CurrentVersionReviews: result.UserRatingCountForCurrentVersion,
+		ScreenshotURLs:        result.ScreenshotURLs,
+		IpadScreenshots:       result.IpadScreenshotURLs,
+		AppletvScreenshots:    result.AppletvScreenshotURLs,
+		SupportedDevices:      result.SupportedDevices,
 	}
 
 	return app
 }
 
-// parseReview 解析评论信息
-// data: 原始API响应数据（RSS Feed格式）
+// parseReviewEntry 解析评论信息
+// entry: RSS Feed中的ReviewEntry结构
 // 返回解析后的Review结构体
-func (s *Scraper) parseReview(data map[string]interface{}) Review {
-	// 辅助函数：从嵌套对象中提取 label 字段
-	getLabel := func(key string) string {
-		if obj, ok := data[key].(map[string]interface{}); ok {
-			return parseInterfaceString(obj["label"])
-		}
-		return ""
-	}
-
+func (s *Scraper) parseReviewEntry(entry ReviewEntry) Review {
 	review := Review{
-		ID:            getLabel("id"),
-		UserName:      getLabel("author"),
-		UserReviewURL: getLabel("author"),
-		Version:       getLabel("im:version"),
-		Score:         parseRating(getLabel("im:rating")),
-		Title:         getLabel("title"),
-		Text:          getLabel("content"),
-		Updated:       getLabel("updated"),
-	}
-
-	// 解析作者信息
-	if author, ok := data["author"].(map[string]interface{}); ok {
-		if name, ok := author["name"].(map[string]interface{}); ok {
-			review.UserName = parseInterfaceString(name["label"])
-		}
-		if uri, ok := author["uri"].(map[string]interface{}); ok {
-			review.UserReviewURL = parseInterfaceString(uri["label"])
-		}
+		ID:            entry.ID.Label,
+		UserName:      entry.Author.Name.Label,
+		UserReviewURL: entry.Author.URI.Label,
+		Version:       entry.ImVersion.Label,
+		Score:         parseRatingStr(entry.ImRating.Label),
+		Title:         entry.Title.Label,
+		Text:          entry.Content.Label,
+		Updated:       entry.Updated.Label,
 	}
 
 	return review
 }
 
-// parseRating 解析评分
-// 可能返回字符串或整数
-func parseRating(value interface{}) int {
-	switch v := value.(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case string:
-		// 处理可能的字符串
+// parseRatingStr 解析评分为整数
+func parseRatingStr(value string) int {
+	if value == "" {
 		return 0
 	}
-	return 0
-}
-
-// parseVoteCount 解析投票数
-func parseVoteCount(value interface{}) int {
-	switch v := value.(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case string:
-		// 字符串可能为空或包含数字
-		if v == "" {
-			return 0
-		}
-		return 0
+	if rating, err := strconv.Atoi(value); err == nil {
+		return rating
 	}
 	return 0
 }
@@ -621,7 +465,7 @@ func parseVoteCount(value interface{}) int {
 // entry: RSS feed中的entry数据
 // 返回解析后的AppInfo结构体（基本信息）
 // 已废弃，使用 lookup 函数代替
-func (s *Scraper) parseRSSEntry(entry interface{}) AppInfo {
+func (s *Scraper) parseRSSEntry(entry json.RawMessage) AppInfo {
 	return AppInfo{}
 }
 
@@ -794,66 +638,28 @@ func containsInt64(slice []int64, item int64) bool {
 }
 
 // lookup 通过lookup API获取应用信息
-func (s *Scraper) lookup(ids interface{}, idField, country, lang string, opts *RequestOptions) ([]AppInfo, error) {
-	// 将ids转换为字符串
-	var idsString string
-	switch v := ids.(type) {
-	case int64:
-		idsString = strconv.FormatInt(v, 10)
-	case []int64:
-		idStrs := make([]string, len(v))
-		for i, id := range v {
-			idStrs[i] = strconv.FormatInt(id, 10)
-		}
-		idsString = strings.Join(idStrs, ",")
-	case []int:
-		idStrs := make([]string, len(v))
-		for i, id := range v {
-			idStrs[i] = strconv.Itoa(id)
-		}
-		idsString = strings.Join(idStrs, ",")
+func (s *Scraper) lookup(ids []int64, country, lang string, opts *RequestOptions) ([]AppInfo, error) {
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = strconv.FormatInt(id, 10)
 	}
+	idsString := strings.Join(idStrs, ",")
 
-	// 构建URL
-	paramName := "id"
-	if idField == "bundleId" {
-		paramName = "bundleId"
-	} else if idField == "artistId" {
-		paramName = "id"
-	}
-
-	url := fmt.Sprintf("https://itunes.apple.com/lookup?%s=%s&country=%s&entity=software", paramName, idsString, country)
+	url := fmt.Sprintf("/lookup?id=%s&country=%s&entity=software", idsString, country)
 	if lang != "" {
 		url += "&lang=" + lang
 	}
 
-	// 发送请求
-	result, err := s.client.GetRaw(url)
+	result, err := s.client.GetLookup(url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// 解析响应
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &data); err != nil {
-		return nil, err
-	}
-
-	results, ok := data["results"].([]interface{})
-	if !ok {
-		return []AppInfo{}, nil
-	}
-
-	// 过滤软件类型并转换
-	apps := []AppInfo{}
-	for _, item := range results {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			kind := parseInterfaceString(itemMap["kind"])
-			wrapperType := parseInterfaceString(itemMap["wrapperType"])
-			if kind == "software" || wrapperType == "software" {
-				app := s.parseAppInfo(itemMap)
-				apps = append(apps, app)
-			}
+	var apps []AppInfo
+	for _, item := range result.Results {
+		if item.Kind == "software" || item.WrapperType == "software" {
+			app := s.parseAppResult(item)
+			apps = append(apps, app)
 		}
 	}
 

@@ -389,7 +389,7 @@ func testAll() {
 	fmt.Println("\n✅ 全部功能测试完成！")
 }
 
-func printJSON(data interface{}) {
+func printJSON[T any](data T) {
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		log.Printf("JSON序列化失败: %v", err)

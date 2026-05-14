@@ -257,7 +257,7 @@ type AppInfo struct {
 	Genres                []string         `json:"genres"`                // 类别列表
 	GenreIDs              []string         `json:"genreIds"`              // 类别ID列表
 	PrimaryGenre          string           `json:"primaryGenre"`          // 主要类别
-	PrimaryGenreID        string           `json:"primaryGenreId"`        // 主要类别ID
+	PrimaryGenreID        int64    `json:"primaryGenreId"`        // 主要类别ID
 	ContentRating         string           `json:"contentRating"`         // 内容评级
 	Languages             []string         `json:"languages"`             // 支持的语言
 	Size                  string           `json:"size"`                  // 文件大小
